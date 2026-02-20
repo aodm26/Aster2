@@ -178,32 +178,67 @@ function createExplosion(position, color) {
 
 function spawnAsteroid() {
     if (isGameOver) return;
-    const isHeavy = Math.random() > 0.85; 
-    const size = isHeavy ? 3.6 : (Math.random() * 1.8 + 0.6);
-    const color = isHeavy ? 0xff0000 : 0xDAA520; 
-    
+
+    // 1. VARIETY IN SHAPE
+    // We mix Icosahedrons (smooth rocks), Tetrahedrons (sharp shards), and Dodecahedrons (blocky)
+    const geometries = [
+        new THREE.IcosahedronGeometry(1, 0), 
+        new THREE.TetrahedronGeometry(1, 0),
+        new THREE.DodecahedronGeometry(1, 0)
+    ];
+    const baseGeo = geometries[Math.floor(Math.random() * geometries.length)];
+
+    // 2. VARIETY IN SIZE
+    const isHeavy = Math.random() > 0.85;
+    // Scale is now randomized even for regular asteroids
+    const size = isHeavy ? 3.8 : (Math.random() * 1.5 + 0.5);
+
+    // 3. VARIETY IN COLOR (Space Palettes)
+    const colors = [
+        0xDAA520, // Goldenrod (Standard)
+        0x8B4513, // Saddle Brown (Iron-rich)
+        0x696969, // Dim Gray (Carbonaceous)
+        0xA9A9A9  // Dark Gray (Silicate)
+    ];
+    const color = isHeavy ? 0xff0000 : colors[Math.floor(Math.random() * colors.length)];
+
     const a = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(size, 0),
-        new THREE.MeshStandardMaterial({ color: color, flatShading: true, roughness: 0.9 })
+        baseGeo,
+        new THREE.MeshStandardMaterial({ 
+            color: color, 
+            flatShading: true, 
+            roughness: 1.0 
+        })
     );
+
+    // Apply the random size scale
+    a.scale.set(size, size, size);
     
+    // Add minor distortion so they aren't perfect spheres
+    a.scale.x *= (0.8 + Math.random() * 0.4);
+    a.scale.y *= (0.8 + Math.random() * 0.4);
+
+    // 4. VARIETY IN POSITION & PHYSICS
     a.position.set(THREE.MathUtils.randFloatSpread(32), 0, -150);
     
     a.userData = { 
-        // Increased base speeds (Regular: ~0.06, Heavy: 0.04)
-        speed: (isHeavy ? 0.04 : (3.6 - size) * 0.06), 
-        hp: isHeavy ? 3 : 1, 
+        speed: (isHeavy ? 0.04 : (4 - size) * 0.06), 
+        hp: isHeavy ? 4 : 1, // Heavies are now slightly tougher
         isHeavy: isHeavy, 
         color: color, 
-        rotation: Math.random() * 0.02,
-        // Curved Trajectory Properties
-        curveAmount: (Math.random() - 0.5) * 0.15, // How "wide" the curve is
-        curveSpeed: Math.random() * 0.02 // how fast it oscillates
+        // Random tumble/rotation on all 3 axes
+        rotX: (Math.random() - 0.5) * 0.05,
+        rotY: (Math.random() - 0.5) * 0.05,
+        // The sine-wave curve properties we added earlier
+        curveAmount: (Math.random() - 0.5) * 0.2,
+        curveSpeed: Math.random() * 0.03
     };
-    
+
     scene.add(a);
     asteroids.push(a);
 }
+
+
 function spawnPowerUp() {
     if (isGameOver) return;
     const rand = Math.random();
@@ -306,8 +341,8 @@ function animate() {
     if (keys['KeyS'] || keys['ArrowDown']) playerGroup.position.z += speed;
 
     // Enforce Boundaries (x: left/right, z: forward/back, y: locked)
-    playerGroup.position.x = Math.max(-16, Math.min(16, playerGroup.position.x));
-    playerGroup.position.z = Math.max(-12, Math.min(16, playerGroup.position.z));
+    playerGroup.position.x = Math.max(-18, Math.min(18, playerGroup.position.x));
+    playerGroup.position.z = Math.max(-18, Math.min(16, playerGroup.position.z));
     playerGroup.position.y = 0; // Hard lock on Y axis
 
     // 3. CONTINUOUS BEAM LASER (Purple Power-up)
@@ -359,18 +394,27 @@ function animate() {
 
     // 5. ASTEROID PHYSICS & PHASER COLLISION
     for (let i = asteroids.length - 1; i >= 0; i--) {
-        const a = asteroids[i];
-        
-        // Base speed multiplied by the score-based warpFactor
-        const currentSpeed = a.userData.speed * warpFactor;
-        a.position.z += currentSpeed;
+    const a = asteroids[i];
+    
+    // 1. FORWARD MOVEMENT 
+    // Speed increases based on score (warpFactor)
+    const currentSpeed = a.userData.speed * warpFactor;
+    a.position.z += currentSpeed;
 
-        // Curved movement (Sine wave)
-        a.position.x += Math.sin(a.position.z * a.userData.curveSpeed) * a.userData.curveAmount;
-        
-        a.rotation.x += a.userData.rotation;
-        a.position.y = 0; // Ensure asteroids stay on plane
+    // 2. CURVED TRAJECTORY
+    // Uses the asteroid's unique curve speed/amount for a "snake" path
+    a.position.x += Math.sin(a.position.z * a.userData.curveSpeed) * a.userData.curveAmount;
+    
+    // 3. MULTI-AXIS TUMBLE
+    // We now rotate on X and Y for a realistic zero-G drift
+    a.rotation.x += a.userData.rotX || 0.02; // Fallback in case old rocks exist
+    a.rotation.y += a.userData.rotY || 0.01;
+    
+    // 4. PLANE LOCK
+    // Keeps everything strictly on the flat horizontal plane
+    a.position.y = 0;
 
+    
         // Player Impact
         if (playerGroup.position.distanceTo(a.position) < 1.5 + a.geometry.parameters.radius) {
             if (hasShield) { hasShield = false; shieldBubble.visible = false; } 
