@@ -16,6 +16,14 @@ let startTime = 0;
 let elapsedTime = 0;
 let targetRoll = 0;
 
+let ufo = null;
+let ufoActive = false;
+let lastUfoShot = 0;
+
+
+let ufoHP = 20; // It takes 20 laser hits or sustained beam damage to destroy
+
+const ufoProjectiles = [];
 
 const COMBO_MAX_TIME = 400; // Time (in frames) before combo resets
 
@@ -144,6 +152,42 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
 
 });
+
+//ufo
+function spawnUfo() {
+    if (ufoActive) return;
+    ufoActive = true;
+
+    ufo = new THREE.Group();
+    
+    // Saucer Body
+    const body = new THREE.Mesh(
+        new THREE.SphereGeometry(1.5, 32, 8),
+        new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.1 })
+    );
+    body.scale.y = 0.3;
+
+    // Cockpit Dome
+    const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(0.6, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 2, transparent: true, opacity: 0.6 })
+    );
+    dome.position.y = 0.1;
+
+    ufo.add(body, dome);
+    ufo.position.set(0, 0, -80); // Start far away in the distance
+    scene.add(ufo);
+}
+
+function fireUfoProjectile() {
+    const proj = new THREE.Mesh(
+        new THREE.SphereGeometry(0.4, 8, 8),
+        new THREE.MeshBasicMaterial({ color: 0xff00ff }) // Purple enemy fire
+    );
+    proj.position.copy(ufo.position);
+    scene.add(proj);
+    ufoProjectiles.push(proj);
+}
 
 function playPhaserSound() {
     const osc = audioCtx.createOscillator();
@@ -434,6 +478,52 @@ function animate() {
     } else {
         beamMesh.visible = false;
         beamLight.visible = false;
+    }
+
+    // --- UFO LOGIC ---
+    if (score >= 5000) {
+        if (!ufoActive) spawnUfo();
+
+        // 1. Hover Behavior: Stalk the player's X position
+        // The UFO stays out of range at Z = -40
+        ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
+        ufo.position.x = THREE.MathUtils.lerp(ufo.position.x, playerGroup.position.x, 0.03);
+        ufo.rotation.y += 0.05; // Make the saucer spin!
+        
+        // 2. UFO Firing (Every 2 seconds)
+        let now = Date.now();
+        if (now - lastUfoShot > 2000) {
+            fireUfoProjectile();
+            lastUfoShot = now;
+        }
+    }
+
+    // 3. Enemy Projectile Movement & Collision
+    for (let i = ufoProjectiles.length - 1; i >= 0; i--) {
+        const p = ufoProjectiles[i];
+        p.position.z += 0.5; // Move toward player
+
+        // Hit Detection
+        if (p.position.distanceTo(playerGroup.position) < 1.5) {
+            if (!hasShield) {
+                health--;
+                updateHealthUI();
+                if (health <= 0) handleGameOver();
+            } else {
+                hasShield = false;
+                shieldBubble.visible = false;
+            }
+            scene.remove(p);
+            ufoProjectiles.splice(i, 1);
+            createExplosion(playerGroup.position, 0xff00ff);
+            continue;
+        }
+
+        // Cleanup
+        if (p.position.z > 30) {
+            scene.remove(p);
+            ufoProjectiles.splice(i, 1);
+        }
     }
 
     // 4. POWER-UPS & PARTICLES
