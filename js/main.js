@@ -14,6 +14,8 @@ let beamPowerTime = 0;
 
 let startTime = 0;
 let elapsedTime = 0;
+let targetRoll = 0;
+
 
 const COMBO_MAX_TIME = 400; // Time (in frames) before combo resets
 
@@ -35,31 +37,64 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 const glow = new THREE.PointLight(0x00aaff, 2, 10);
 scene.add(glow);
 
-// --- 3. SHIP CONSTRUCTION (USS Enterprise Style) ---
+// --- 3. ADVANCED SHIP CONSTRUCTION ---
 const playerGroup = new THREE.Group();
-const shipMat = new THREE.MeshStandardMaterial({ color: 0xcccccc });
-const nacelleMat = new THREE.MeshStandardMaterial({ color: 0x444444, emissive: 0xff0000, emissiveIntensity: 1 });
 
-const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.2, 16), shipMat);
+// Materials
+const hullMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, metalness: 0.3, roughness: 0.4 });
+const engineMat = new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x00ccff, emissiveIntensity: 2 });
+const deflectorMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xff4400, emissiveIntensity: 1.5 });
+
+// Primary Hull (Saucer) - Increased segments for smoothness
+const saucer = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 0.15, 32), hullMat);
 saucer.rotation.x = Math.PI / 2;
 
-const neck = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.1, 0.5), shipMat);
-neck.position.z = 0.5;
+// Bridge Dome
+const bridge = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), hullMat);
+bridge.position.set(0, 0.1, 0);
+saucer.add(bridge);
 
-const nacelleL = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.0, 8), nacelleMat);
-nacelleL.position.set(-0.7, 0.2, 0.8);
+// Secondary Hull (Engineering)
+const engHull = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.2, 1.2, 16), hullMat);
+engHull.position.set(0, -0.3, 0.9);
+engHull.rotation.x = Math.PI / 2;
+
+// Neck (Connecting Saucer to Engineering)
+const neck = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.5, 0.4), hullMat);
+neck.position.set(0, -0.1, 0.4);
+neck.rotation.x = -Math.PI / 4;
+
+// Deflector Dish (Glowing front)
+const dish = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.05, 8, 16), deflectorMat);
+dish.position.set(0, 0, -0.6); // Attached to front of engHull
+engHull.add(dish);
+
+// Nacelles (Warp Engines)
+const nacelleGeo = new THREE.CylinderGeometry(0.12, 0.1, 1.8, 12);
+const nacelleL = new THREE.Mesh(nacelleGeo, engineMat);
+nacelleL.position.set(-0.8, 0.1, 1.4);
 nacelleL.rotation.x = Math.PI / 2;
 
 const nacelleR = nacelleL.clone();
-nacelleR.position.x = 0.7;
+nacelleR.position.x = 0.8;
 
+// Pylons (Holding Nacelles)
+const pylonL = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.05, 0.2), hullMat);
+pylonL.position.set(-0.4, 0, 1.1);
+pylonL.rotation.z = Math.PI / 6;
+
+const pylonR = pylonL.clone();
+pylonR.position.x = 0.4;
+pylonR.rotation.z = -Math.PI / 6;
+
+// Re-add Shield
 const shieldBubble = new THREE.Mesh(
-    new THREE.SphereGeometry(1.6, 16, 16),
-    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.2, wireframe: true })
+    new THREE.SphereGeometry(2.0, 16, 16),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, transparent: true, opacity: 0.15, wireframe: true })
 );
 shieldBubble.visible = false;
 
-playerGroup.add(saucer, neck, nacelleL, nacelleR, shieldBubble);
+playerGroup.add(saucer, engHull, neck, pylonL, pylonR, nacelleL, nacelleR, shieldBubble);
 scene.add(playerGroup);
 
 camera.position.set(0, 12, 18);
@@ -81,7 +116,7 @@ scene.add(beamLight);
 // --- 5. STARFIELD ---
 const starGeo = new THREE.BufferGeometry();
 const starStaff = [];
-for(let i=0; i<4000; i++) {
+for (let i = 0; i < 4000; i++) {
     starStaff.push(THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200), THREE.MathUtils.randFloatSpread(200));
 }
 starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starStaff, 3));
@@ -94,20 +129,20 @@ const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 document.getElementById('start-btn').addEventListener('click', () => {
     document.getElementById('overlay').style.display = 'none';
     audioCtx.resume();
-    
+
     // START THE CLOCK HERE
-    startTime = Date.now(); 
+    startTime = Date.now();
     setInterval(() => {
         if (!isGameOver) {
             elapsedTime = Math.floor((Date.now() - startTime) / 1000);
             const mins = Math.floor(elapsedTime / 60).toString().padStart(2, '0');
             const secs = (elapsedTime % 60).toString().padStart(2, '0');
             const timerEl = document.getElementById('timer');
-            if(timerEl) timerEl.innerText = `${mins}:${secs}`;
+            if (timerEl) timerEl.innerText = `${mins}:${secs}`;
         }
     }, 1000);
 
-   
+
 });
 
 function playPhaserSound() {
@@ -147,7 +182,7 @@ function displayLeaderboard() {
     const lb = document.getElementById('leaderboard');
     if (!lb) return;
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    lb.innerHTML = "<strong>TOP CAPTAINS</strong><br>" + scores.map((s, i) => `${i+1}. ${s}`).join('<br>');
+    lb.innerHTML = "<strong>TOP CAPTAINS</strong><br>" + scores.map((s, i) => `${i + 1}. ${s}`).join('<br>');
 }
 
 
@@ -165,12 +200,13 @@ function addScore(points) {
 function createExplosion(position, color) {
     playExplosionSound();
     for (let i = 0; i < 15; i++) {
-        const p = new THREE.Mesh(new THREE.SphereGeometry(0.15), 
-        new THREE.MeshBasicMaterial({ color: color, transparent: true }));
+        const p = new THREE.Mesh(new THREE.SphereGeometry(0.15),
+            new THREE.MeshBasicMaterial({ color: color, transparent: true }));
         p.position.copy(position);
         p.userData = {
-             velocity: new THREE.Vector3((Math.random()-0.5)*0.6, 
-            (Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6), life: 1.0 };
+            velocity: new THREE.Vector3((Math.random() - 0.5) * 0.6,
+                (Math.random() - 0.5) * 0.6, (Math.random() - 0.5) * 0.6), life: 1.0
+        };
         scene.add(p);
         particles.push(p);
     }
@@ -182,7 +218,7 @@ function spawnAsteroid() {
     // 1. VARIETY IN SHAPE
     // We mix Icosahedrons (smooth rocks), Tetrahedrons (sharp shards), and Dodecahedrons (blocky)
     const geometries = [
-        new THREE.IcosahedronGeometry(1, 0), 
+        new THREE.IcosahedronGeometry(1, 0),
         new THREE.TetrahedronGeometry(1, 0),
         new THREE.DodecahedronGeometry(1, 0)
     ];
@@ -204,28 +240,28 @@ function spawnAsteroid() {
 
     const a = new THREE.Mesh(
         baseGeo,
-        new THREE.MeshStandardMaterial({ 
-            color: color, 
-            flatShading: true, 
-            roughness: 1.0 
+        new THREE.MeshStandardMaterial({
+            color: color,
+            flatShading: true,
+            roughness: 1.0
         })
     );
 
     // Apply the random size scale
     a.scale.set(size, size, size);
-    
+
     // Add minor distortion so they aren't perfect spheres
     a.scale.x *= (0.8 + Math.random() * 0.4);
     a.scale.y *= (0.8 + Math.random() * 0.4);
 
     // 4. VARIETY IN POSITION & PHYSICS
     a.position.set(THREE.MathUtils.randFloatSpread(32), 0, -150);
-    
-    a.userData = { 
-        speed: (isHeavy ? 0.04 : (4 - size) * 0.06), 
+
+    a.userData = {
+        speed: (isHeavy ? 0.04 : (4 - size) * 0.06),
         hp: isHeavy ? 4 : 1, // Heavies are now slightly tougher
-        isHeavy: isHeavy, 
-        color: color, 
+        isHeavy: isHeavy,
+        color: color,
         // Random tumble/rotation on all 3 axes
         rotX: (Math.random() - 0.5) * 0.05,
         rotY: (Math.random() - 0.5) * 0.05,
@@ -254,7 +290,7 @@ function spawnPowerUp() {
 
 function handleGameOver() {
     isGameOver = true;
-    
+
     // 1. Save High Scores to LocalStorage
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
     scores.push(score);
@@ -272,8 +308,8 @@ function handleGameOver() {
 
     const lbDisplay = document.getElementById('leaderboard-display');
     if (lbDisplay) {
-        lbDisplay.innerHTML = "<h3 style='margin:10px 0'>TOP CAPTAINS</h3>" + 
-            scores.slice(0, 5).map((s, i) => `<p style='margin:5px 0'>${i+1}. ${s}</p>`).join('');
+        lbDisplay.innerHTML = "<h3 style='margin:10px 0'>TOP CAPTAINS</h3>" +
+            scores.slice(0, 5).map((s, i) => `<p style='margin:5px 0'>${i + 1}. ${s}</p>`).join('');
     }
 
     // 4. Reveal the Overlay
@@ -287,7 +323,7 @@ function handleGameOver() {
     particles.forEach(p => scene.remove(p));
     asteroids.forEach(a => scene.remove(a));
     bullets.forEach(b => scene.remove(b));
-    
+
     // Note: We no longer call location.reload() here. 
     // The "RE-ENGAGE" button in the HTML will handle the reload.
 }
@@ -296,10 +332,10 @@ function handleGameOver() {
 window.addEventListener('keydown', (e) => keys[e.code] = true);
 window.addEventListener('keyup', (e) => {
     keys[e.code] = false;
-    if(e.code === 'Space' && beamPowerTime <= 0) {
+    if (e.code === 'Space' && beamPowerTime <= 0) {
         playPhaserSound();
         const fire = (off) => {
-            const b = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({color: 0x00ffff}));
+            const b = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({ color: 0x00ffff }));
             b.position.copy(playerGroup.position); b.position.x += off; scene.add(b); bullets.push(b);
         };
         isTripleShot ? (fire(-0.6), fire(0), fire(0.6)) : fire(0);
@@ -309,7 +345,7 @@ window.addEventListener('keyup', (e) => {
 document.getElementById('start-btn').addEventListener('click', () => {
     document.getElementById('overlay').style.display = 'none';
     audioCtx.resume();
-    setInterval(spawnAsteroid, 2000 + warpFactor/5); // Spawn rate increases with score
+    setInterval(spawnAsteroid, 2000 + warpFactor / 5); // Spawn rate increases with score
     setInterval(spawnPowerUp, 9000);
     animate();
 });
@@ -327,11 +363,11 @@ function animate() {
     warpFactor = 1.0 + (score / 5000);
 
     starField.position.z += 0.15 * warpFactor;
-    if(starField.position.z > 100) starField.position.z = 0;
+    if (starField.position.z > 100) starField.position.z = 0;
 
     // Combo Timer Decay
-    if (comboTimer > 0) comboTimer--; 
-    else { combo = 0; if(document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = ""; }
+    if (comboTimer > 0) comboTimer--;
+    else { combo = 0; if (document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = ""; }
 
     // 2. SHIP MOVEMENT (Locked Y Axis)
     const speed = 0.2;
@@ -345,6 +381,26 @@ function animate() {
     playerGroup.position.z = Math.max(-18, Math.min(16, playerGroup.position.z));
     playerGroup.position.y = 0; // Hard lock on Y axis
 
+
+    // --- DYNAMIC BANKING LOGIC ---
+    if (keys['KeyA'] || keys['ArrowLeft']) {
+        targetRoll = 0.4; // Roll left
+    } else if (keys['KeyD'] || keys['ArrowRight']) {
+        targetRoll = -0.4; // Roll right
+    } else {
+        targetRoll = 0; // Level out
+    }
+
+    // Smoothly interpolate the rotation for a "weighted" feel
+    playerGroup.rotation.z = THREE.MathUtils.lerp(playerGroup.rotation.z, targetRoll, 0.1);
+
+    // Optional: Add a slight pitch (tip up/down) when moving forward/back
+    let targetPitch = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) targetPitch = 0.15;
+    if (keys['KeyS'] || keys['ArrowDown']) targetPitch = -0.15;
+    playerGroup.rotation.x = THREE.MathUtils.lerp(playerGroup.rotation.x, targetPitch, 0.1);
+
+
     // 3. CONTINUOUS BEAM LASER (Purple Power-up)
     if (keys['Space'] && beamPowerTime > 0) {
         beamMesh.visible = true;
@@ -355,7 +411,7 @@ function animate() {
         beamMesh.position.set(playerGroup.position.x, 0, playerGroup.position.z - 25);
         beamMesh.scale.set(1, 50, 1);
         beamLight.position.set(playerGroup.position.x, 0, playerGroup.position.z - 5);
-        
+
         // Vibration effect for the beam
         camera.position.x += (Math.random() - 0.5) * 0.06;
 
@@ -366,7 +422,7 @@ function animate() {
             if (xDist < a.geometry.parameters.radius + 0.4 && a.position.z < playerGroup.position.z) {
                 a.userData.hp -= 0.15; // Damage over time
                 a.material.emissive.setHex(0xffffff); // Heat glow
-                
+
                 if (a.userData.hp <= 0) {
                     createExplosion(a.position, a.userData.color);
                     addScore(a.userData.isHeavy ? 300 : 100);
@@ -385,7 +441,7 @@ function animate() {
         const p = powerUps[i]; p.position.z += 0.12 * warpFactor;
         if (playerGroup.position.distanceTo(p.position) < 2.0) {
             if (p.userData.type === 'laser') beamPowerTime = 300;
-            else if (p.userData.type === 'triple') { isTripleShot = true; setTimeout(()=>isTripleShot=false, 10000); }
+            else if (p.userData.type === 'triple') { isTripleShot = true; setTimeout(() => isTripleShot = false, 10000); }
             else if (p.userData.type === 'shield') { hasShield = true; shieldBubble.visible = true; }
             else if (p.userData.type === 'health') { if (health < 3) health++; updateHealthUI(); }
             scene.remove(p); powerUps.splice(i, 1);
@@ -394,30 +450,30 @@ function animate() {
 
     // 5. ASTEROID PHYSICS & PHASER COLLISION
     for (let i = asteroids.length - 1; i >= 0; i--) {
-    const a = asteroids[i];
-    
-    // 1. FORWARD MOVEMENT 
-    // Speed increases based on score (warpFactor)
-    const currentSpeed = a.userData.speed * warpFactor;
-    a.position.z += currentSpeed;
+        const a = asteroids[i];
 
-    // 2. CURVED TRAJECTORY
-    // Uses the asteroid's unique curve speed/amount for a "snake" path
-    a.position.x += Math.sin(a.position.z * a.userData.curveSpeed) * a.userData.curveAmount;
-    
-    // 3. MULTI-AXIS TUMBLE
-    // We now rotate on X and Y for a realistic zero-G drift
-    a.rotation.x += a.userData.rotX || 0.02; // Fallback in case old rocks exist
-    a.rotation.y += a.userData.rotY || 0.01;
-    
-    // 4. PLANE LOCK
-    // Keeps everything strictly on the flat horizontal plane
-    a.position.y = 0;
+        // 1. FORWARD MOVEMENT 
+        // Speed increases based on score (warpFactor)
+        const currentSpeed = a.userData.speed * warpFactor;
+        a.position.z += currentSpeed;
 
-    
+        // 2. CURVED TRAJECTORY
+        // Uses the asteroid's unique curve speed/amount for a "snake" path
+        a.position.x += Math.sin(a.position.z * a.userData.curveSpeed) * a.userData.curveAmount;
+
+        // 3. MULTI-AXIS TUMBLE
+        // We now rotate on X and Y for a realistic zero-G drift
+        a.rotation.x += a.userData.rotX || 0.02; // Fallback in case old rocks exist
+        a.rotation.y += a.userData.rotY || 0.01;
+
+        // 4. PLANE LOCK
+        // Keeps everything strictly on the flat horizontal plane
+        a.position.y = 0;
+
+
         // Player Impact
         if (playerGroup.position.distanceTo(a.position) < 1.5 + a.geometry.parameters.radius) {
-            if (hasShield) { hasShield = false; shieldBubble.visible = false; } 
+            if (hasShield) { hasShield = false; shieldBubble.visible = false; }
             else { health--; updateHealthUI(); if (health <= 0) { handleGameOver(); return; } }
             createExplosion(a.position, 0xff0000); scene.remove(a); asteroids.splice(i, 1); continue;
         }
@@ -427,13 +483,13 @@ function animate() {
             if (bullets[j].position.distanceTo(a.position) < a.geometry.parameters.radius + 0.6) {
                 a.userData.hp--;
                 if (a.userData.hp <= 0) {
-                    if (a.userData.isHeavy) camera.position.x += (Math.random()-0.5)*2;
+                    if (a.userData.isHeavy) camera.position.x += (Math.random() - 0.5) * 2;
                     createExplosion(a.position, a.userData.color);
                     addScore(a.userData.isHeavy ? 300 : 100);
                     scene.remove(a); asteroids.splice(i, 1);
                 } else {
                     a.material.emissive.setHex(0xffffff);
-                    setTimeout(() => { if(a && a.material) a.material.emissive.setHex(0x000000); }, 50);
+                    setTimeout(() => { if (a && a.material) a.material.emissive.setHex(0x000000); }, 50);
                 }
                 scene.remove(bullets[j]); bullets.splice(j, 1); break;
             }
@@ -445,33 +501,38 @@ function animate() {
     for (let i = bullets.length - 1; i >= 0; i--) {
         // Projectiles move forward
         bullets[i].position.z -= 1.2; // Slightly faster phasers for the longer distance
-        
+
         // Extended distance: Clean up at -200 instead of -100
-        if(bullets[i].position.z < -200) {
+        if (bullets[i].position.z < -200) {
             scene.remove(bullets[i]);
             bullets.splice(i, 1);
-        }}
-
-        // --- PARTICLES CLEANUP ---
-for (let i = particles.length - 1; i >= 0; i--) {
-    const p = particles[i];
-    
-    // Move the particle
-    p.position.add(p.userData.velocity);
-    
-    // Fade out
-    p.userData.life -= 0.02; // Decrease life every frame
-    p.material.opacity = p.userData.life;
-    
-    // Shrink slightly for a better effect
-    p.scale.multiplyScalar(0.96);
-
-    // If life is gone, remove from scene AND array
-    if (p.userData.life <= 0) {
-        scene.remove(p);            // Remove from 3D world
-        particles.splice(i, 1);     // Remove from tracking array
+        }
     }
-}
+
+    const enginePulse = 1.5 + Math.sin(Date.now() * 0.005) * 0.5;
+    engineMat.emissiveIntensity = enginePulse;
+    deflectorMat.emissiveIntensity = 1 + Math.sin(Date.now() * 0.002) * 0.3;
+
+    // --- PARTICLES CLEANUP ---
+    for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+
+        // Move the particle
+        p.position.add(p.userData.velocity);
+
+        // Fade out
+        p.userData.life -= 0.02; // Decrease life every frame
+        p.material.opacity = p.userData.life;
+
+        // Shrink slightly for a better effect
+        p.scale.multiplyScalar(0.96);
+
+        // If life is gone, remove from scene AND array
+        if (p.userData.life <= 0) {
+            scene.remove(p);            // Remove from 3D world
+            particles.splice(i, 1);     // Remove from tracking array
+        }
+    }
 
     renderer.render(scene, camera);
 }
