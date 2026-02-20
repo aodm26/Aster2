@@ -150,6 +150,8 @@ function displayLeaderboard() {
     lb.innerHTML = "<strong>TOP CAPTAINS</strong><br>" + scores.map((s, i) => `${i+1}. ${s}`).join('<br>');
 }
 
+
+
 function addScore(points) {
     combo++;
     comboTimer = COMBO_MAX_TIME;
@@ -163,9 +165,12 @@ function addScore(points) {
 function createExplosion(position, color) {
     playExplosionSound();
     for (let i = 0; i < 15; i++) {
-        const p = new THREE.Mesh(new THREE.SphereGeometry(0.15), new THREE.MeshBasicMaterial({ color: color, transparent: true }));
+        const p = new THREE.Mesh(new THREE.SphereGeometry(0.15), 
+        new THREE.MeshBasicMaterial({ color: color, transparent: true }));
         p.position.copy(position);
-        p.userData = { velocity: new THREE.Vector3((Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6), life: 1.0 };
+        p.userData = {
+             velocity: new THREE.Vector3((Math.random()-0.5)*0.6, 
+            (Math.random()-0.5)*0.6, (Math.random()-0.5)*0.6), life: 1.0 };
         scene.add(p);
         particles.push(p);
     }
@@ -214,10 +219,42 @@ function spawnPowerUp() {
 
 function handleGameOver() {
     isGameOver = true;
+    
+    // 1. Save High Scores to LocalStorage
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    scores.push(score); scores.sort((a, b) => b - a);
+    scores.push(score);
+    scores.sort((a, b) => b - a);
     localStorage.setItem('highscores', JSON.stringify(scores.slice(0, 5)));
-    setTimeout(() => { alert("Ship Destroyed! Score: " + score); location.reload(); }, 100);
+
+    // 2. Get the final time from the UI
+    const finalTime = document.getElementById('timer')?.innerText || "00:00";
+
+    // 3. Populate the Game Over Overlay
+    const statsEl = document.getElementById('final-stats');
+    if (statsEl) {
+        statsEl.innerHTML = `FINAL SCORE: ${score}<br>TIME IN SECTOR: ${finalTime}`;
+    }
+
+    const lbDisplay = document.getElementById('leaderboard-display');
+    if (lbDisplay) {
+        lbDisplay.innerHTML = "<h3 style='margin:10px 0'>TOP CAPTAINS</h3>" + 
+            scores.slice(0, 5).map((s, i) => `<p style='margin:5px 0'>${i+1}. ${s}</p>`).join('');
+    }
+
+    // 4. Reveal the Overlay
+    const overlay = document.getElementById('game-over-overlay');
+    if (overlay) {
+        overlay.style.display = 'flex'; // Changed from 'none' to 'flex'
+    }
+
+    // 5. Cleanup the "Pixels" (Particles)
+    // We clear the scene objects so the background looks clean behind the overlay
+    particles.forEach(p => scene.remove(p));
+    asteroids.forEach(a => scene.remove(a));
+    bullets.forEach(b => scene.remove(b));
+    
+    // Note: We no longer call location.reload() here. 
+    // The "RE-ENGAGE" button in the HTML will handle the reload.
 }
 
 // --- 8. INPUTS ---
@@ -370,6 +407,27 @@ function animate() {
             scene.remove(bullets[i]);
             bullets.splice(i, 1);
         }}
+
+        // --- PARTICLES CLEANUP ---
+for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+    
+    // Move the particle
+    p.position.add(p.userData.velocity);
+    
+    // Fade out
+    p.userData.life -= 0.02; // Decrease life every frame
+    p.material.opacity = p.userData.life;
+    
+    // Shrink slightly for a better effect
+    p.scale.multiplyScalar(0.96);
+
+    // If life is gone, remove from scene AND array
+    if (p.userData.life <= 0) {
+        scene.remove(p);            // Remove from 3D world
+        particles.splice(i, 1);     // Remove from tracking array
+    }
+}
 
     renderer.render(scene, camera);
 }
