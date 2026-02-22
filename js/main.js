@@ -19,6 +19,11 @@ let targetRoll = 0;
 let ufo = null;
 let ufoActive = false;
 let lastUfoShot = 0;
+let ufoSpawningInitiated = false;
+let ufoSpawnTimer = 0;
+let lastUfoDefeatTime = 0;
+let nextUfoDelay = 0; // The randomized wait time
+
 
 let ufoHP = 20;            
 let maxUfoHP = 20; // Added this to track percentage for the bar
@@ -429,11 +434,9 @@ document.getElementById('start-btn').addEventListener('click', () => {
 function handleUfoDefeat() {
     createExplosion(ufo.position, 0x00ff00);
     
-    // Increment the cap and heal the player
     maxHealth += 1; 
     health = maxHealth; 
     updateHealthUI(); 
-    
     addScore(2000);
     
     // UI cleanup
@@ -441,7 +444,14 @@ function handleUfoDefeat() {
     scene.remove(ufo);
     ufo = null;
     ufoActive = false;
+
+    // --- NEW LOGIC: Start the cooldown ---
+    lastUfoDefeatTime = Date.now();
+    ufoSpawningInitiated = false; // Reset for the next cycle
+    // Randomize next delay between 5,000ms and 20,000ms
+    nextUfoDelay = Math.random() * (20000 - 5000) + 5000;
 }
+
 function updateBossUI() {
     const fill = document.getElementById('boss-hp-fill');
     if (fill) {
@@ -449,12 +459,13 @@ function updateBossUI() {
         fill.style.width = pct + "%";
     }
 }
-// --- 9. MAIN LOOP ---
+/// --- 9. MAIN LOOP ---
 function animate() {
     if (isGameOver) return;
     requestAnimationFrame(animate);
 
     // --- 1. CAMERA & WORLD UPDATES ---
+    // Smoothly return camera to center (0, 12, 18)
     camera.position.x += (0 - camera.position.x) * 0.1;
     camera.position.y += (12 - camera.position.y) * 0.1;
 
@@ -491,7 +502,7 @@ function animate() {
         beamLight.visible = true;
         beamPowerTime--;
         beamMesh.position.set(playerGroup.position.x, 0, playerGroup.position.z - 25);
-        camera.position.x += (Math.random() - 0.5) * 0.06;
+        camera.position.x += (Math.random() - 0.5) * 0.1; // Beam shake
 
         for (let i = asteroids.length - 1; i >= 0; i--) {
             const a = asteroids[i];
@@ -511,49 +522,69 @@ function animate() {
         beamLight.visible = false;
     }
 
-        // --- 4. UFO BOSS LOGIC (FIXED) ---
-        if (score >= 5000) {
-            if (!ufoActive) spawnUfo();
+            // --- 4. UFO BOSS LOGIC (WITH VARIABLE DELAY) ---
+        if (score >= 5000 && !ufoActive) {
+            const timeSinceLastDefeat = Date.now() - lastUfoDefeatTime;
 
-            if (ufoActive && ufo) {
-                ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
-                ufo.position.x = THREE.MathUtils.lerp(ufo.position.x, playerGroup.position.x, 0.03);
-                ufo.rotation.y += 0.05;
-
-                if (Date.now() - lastUfoShot > 2000) {
-                    fireUfoProjectile();
-                    lastUfoShot = Date.now();
+            // Only start the spawn sequence if we haven't started yet 
+            // AND enough time has passed since the last one died
+            if (!ufoSpawningInitiated && timeSinceLastDefeat > nextUfoDelay) {
+                ufoSpawningInitiated = true;
+                ufoSpawnTimer = 180; // 3-second visual warning countdown
+                
+                const multiUI = document.getElementById('multiplier-ui');
+                if (multiUI) {
+                    multiUI.innerText = "WARNING: HIGH-ENERGY SIGNATURE DETECTED";
+                    multiUI.style.color = "#ff0000";
                 }
+            }
 
-                // Standard Phasers Hit Detection
-                for (let j = bullets.length - 1; j >= 0; j--) {
-                    const bullet = bullets[j];
-                    if (bullet.position.distanceTo(ufo.position) < 3.2) { // Detection radius
-                        ufoHP--;
-                        updateBossUI();
-                        
-                        // Visual feedback: Flash the saucer body
-                        if (ufo.children[0]) {
-                            ufo.children[0].material.emissive.setHex(0x00ff00);
-                            setTimeout(() => { if (ufo) ufo.children[0].material.emissive.setHex(0x000000); }, 50);
-                        }
-
-                        createExplosion(bullet.position, 0x00ff00);
-                        scene.remove(bullet);
-                        bullets.splice(j, 1);
-                    }
+            // While the warning is active, shake the camera and count down
+            if (ufoSpawningInitiated && ufoSpawnTimer > 0) {
+                ufoSpawnTimer--;
+                camera.position.x += (Math.random() - 0.5) * 0.08;
+                
+                if (ufoSpawnTimer === 1) {
+                    spawnUfo();
                 }
-
-                // Beam Hit Detection
-                if (beamMesh.visible && Math.abs(ufo.position.x - playerGroup.position.x) < 2.8) {
-                    ufoHP -= 0.15; 
-                    updateBossUI();
-                    if (ufo.children[0]) ufo.children[0].material.emissive.setHex(0x00ff00);
-                }
-
-                if (ufoHP <= 0) handleUfoDefeat();
             }
         }
+
+    if (ufoActive && ufo) {
+        ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
+        ufo.position.x = THREE.MathUtils.lerp(ufo.position.x, playerGroup.position.x, 0.03);
+        ufo.rotation.y += 0.05;
+
+        if (Date.now() - lastUfoShot > 2000) {
+            fireUfoProjectile();
+            lastUfoShot = Date.now();
+        }
+
+        // Standard Phasers Hit Detection
+        for (let j = bullets.length - 1; j >= 0; j--) {
+            const bullet = bullets[j];
+            if (bullet.position.distanceTo(ufo.position) < 3.2) {
+                ufoHP--;
+                updateBossUI();
+                if (ufo.children[0]) {
+                    ufo.children[0].material.emissive.setHex(0x00ff00);
+                    setTimeout(() => { if (ufo) ufo.children[0].material.emissive.setHex(0x000000); }, 50);
+                }
+                createExplosion(bullet.position, 0x00ff00);
+                scene.remove(bullet);
+                bullets.splice(j, 1);
+            }
+        }
+
+        // Beam Hit Detection
+        if (beamMesh.visible && Math.abs(ufo.position.x - playerGroup.position.x) < 2.8) {
+            ufoHP -= 0.15; 
+            updateBossUI();
+            if (ufo.children[0]) ufo.children[0].material.emissive.setHex(0x00ff00);
+        }
+
+        if (ufoHP <= 0) handleUfoDefeat();
+    }
 
     // --- 5. UFO PROJECTILES ---
     for (let i = ufoProjectiles.length - 1; i >= 0; i--) {
@@ -563,7 +594,7 @@ function animate() {
             if (!hasShield) {
                 health--;
                 updateHealthUI();
-                if (health <= 0) handleGameOver();
+                if (health <= 0) { handleGameOver(); return; }
             } else {
                 hasShield = false;
                 shieldBubble.visible = false;
@@ -596,19 +627,17 @@ function animate() {
         a.rotation.y += a.userData.rotY || 0.01;
         a.position.y = 0;
 
-        // Asteroid Player Impact
         if (playerGroup.position.distanceTo(a.position) < 1.5 + a.geometry.parameters.radius) {
             if (hasShield) { hasShield = false; shieldBubble.visible = false; }
             else { health--; updateHealthUI(); if (health <= 0) { handleGameOver(); return; } }
             createExplosion(a.position, 0xff0000); scene.remove(a); asteroids.splice(i, 1); continue;
         }
 
-        // Asteroid Phaser Impact
         for (let j = bullets.length - 1; j >= 0; j--) {
             if (bullets[j].position.distanceTo(a.position) < a.geometry.parameters.radius + 0.6) {
                 a.userData.hp--;
                 if (a.userData.hp <= 0) {
-                    if (a.userData.isHeavy) camera.position.x += (Math.random() - 0.5) * 2;
+                    if (a.userData.isHeavy) camera.position.x += (Math.random() - 0.5) * 1.5;
                     createExplosion(a.position, a.userData.color);
                     addScore(a.userData.isHeavy ? 300 : 100);
                     scene.remove(a); asteroids.splice(i, 1);
