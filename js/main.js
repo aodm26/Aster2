@@ -270,12 +270,12 @@ function updateHealthUI() {
 function displayLeaderboard() {
     const lbDisplay = document.getElementById('leaderboard-display');
     const startLb = document.getElementById('leaderboard'); // The one on start screen
-    
+
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    
-    const listHtml = "<strong>TOP CAPTAINS</strong><br>" + 
+
+    const listHtml = "<strong>TOP CAPTAINS</strong><br>" +
         scores.slice(0, 10).map((s, i) => `${i + 1}. ${s.name} - ${s.score}`).join('<br>');
-    
+
     if (lbDisplay) lbDisplay.innerHTML = listHtml;
     if (startLb) startLb.innerHTML = listHtml;
 }
@@ -332,7 +332,7 @@ function spawnAsteroid() {
             color: color,
             flatShading: true,
             emissive: color,
-            emissiveIntensity: 0.6, // Higher intensity for better visibility
+            emissiveIntensity: 0.8, // Higher intensity for better visibility
             metalness: 0.4,
             roughness: 0.3
         })
@@ -352,8 +352,8 @@ function spawnAsteroid() {
 
     a.userData = {
         // Speed now factors in the global warpFactor for a feeling of acceleration
-        speed: (isHeavy ? 0.05 : (5 - size) * 0.08) * warpFactor,
-        hp: isHeavy ? 6 : 1, 
+speed: (isHeavy ? 0.04 : (5 - size) * 0.06) * warpFactor,
+        hp: isHeavy ? 6 : 1,
         isHeavy: isHeavy,
         color: color,
         rotX: (Math.random() - 0.5) * 0.08,
@@ -401,7 +401,7 @@ function handleGameOver() {
     saveBtn.onclick = () => {
         const nameInput = document.getElementById('player-name').value.toUpperCase() || "???";
         saveHighScore(nameInput, score);
-        
+
         // Hide entry field and refresh the board
         nameEntry.style.display = 'none';
         displayLeaderboard();
@@ -419,13 +419,13 @@ function handleGameOver() {
 function saveHighScore(name, newScore) {
     // 1. Load existing scores
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    
+
     // 2. Add new record
     scores.push({ name: name, score: newScore });
-    
+
     // 3. Sort by score (highest first)
     scores.sort((a, b) => b.score - a.score);
-    
+
     // 4. Trim to top 10 and save
     const topTen = scores.slice(0, 10);
     localStorage.setItem('highscores', JSON.stringify(topTen));
@@ -457,20 +457,20 @@ document.getElementById('start-btn').addEventListener('click', () => {
 
 function handleUfoDefeat() {
     createExplosion(ufo.position, 0x00ff00);
-    
-    ufosDefeated++; 
-    
+
+    ufosDefeated++;
+
     // UPDATE THE UI ELEMENT HERE
     const ufoCountEl = document.getElementById('ufo-counter');
     if (ufoCountEl) {
         ufoCountEl.innerText = ufosDefeated;
     }
 
-    maxHealth += 1; 
-    health = maxHealth; 
-    updateHealthUI(); 
+    maxHealth += 1;
+    health = maxHealth;
+    updateHealthUI();
     addScore(2000);
-    
+
     // UI cleanup
     document.getElementById('boss-ui').style.display = 'none';
     scene.remove(ufo);
@@ -495,15 +495,15 @@ function animate() {
     if (isGameOver) return;
     requestAnimationFrame(animate);
 
-// --- BALANCED SPAWNING ---
-const now = Date.now();
-// Score / 200 is very gradual. At 10,000 score, interval is 1.95s.
-asteroidSpawnInterval = Math.max(800, 2000 - (score / 200)); 
+    // --- BALANCED SPAWNING ---
+    const now = Date.now();
+    // Score / 200 is very gradual. At 10,000 score, interval is 1.95s.
+        asteroidSpawnInterval = Math.max(900, 2000 - (score / 500)); 
 
-if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
-    spawnAsteroid();
-    lastAsteroidSpawn = now;
-}
+    if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
+        spawnAsteroid();
+        lastAsteroidSpawn = now;
+    }
     // --- 1. CAMERA & WORLD UPDATES ---
     // Smoothly return camera to center (0, 12, 18)
     camera.position.x += (0 - camera.position.x) * 0.1;
@@ -511,12 +511,11 @@ if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
 
     warpFactor = 1.0 + (score / 20000);
 
-        // Update UI (toFixed(1) keeps it to one decimal point like "1.2c")
+    // Update UI (toFixed(1) keeps it to one decimal point like "1.2c")
     const velocityEl = document.getElementById('velocity');
     if (velocityEl) velocityEl.innerText = warpFactor.toFixed(1);
 
-    starField.position.z += 0.15 * warpFactor;
-    if (starField.position.z > 100) starField.position.z = 0;
+    starField.position.z += 0.10 * warpFactor; // 33% slower base star speed    if (starField.position.z > 100) starField.position.z = 0;
 
     if (comboTimer > 0) comboTimer--;
     else {
