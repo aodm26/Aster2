@@ -55,6 +55,8 @@ document.body.appendChild(renderer.domElement);
 scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 const glow = new THREE.PointLight(0x00aaff, 2, 10);
 scene.add(glow);
+// Fog(color, near, far)
+scene.fog = new THREE.Fog(0x000205, 20, 150);
 
 // --- 3. ADVANCED SHIP CONSTRUCTION ---
 const playerGroup = new THREE.Group();
@@ -266,10 +268,16 @@ function updateHealthUI() {
 }
 
 function displayLeaderboard() {
-    const lb = document.getElementById('leaderboard');
-    if (!lb) return;
+    const lbDisplay = document.getElementById('leaderboard-display');
+    const startLb = document.getElementById('leaderboard'); // The one on start screen
+    
     let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    lb.innerHTML = "<strong>TOP CAPTAINS</strong><br>" + scores.map((s, i) => `${i + 1}. ${s}`).join('<br>');
+    
+    const listHtml = "<strong>TOP CAPTAINS</strong><br>" + 
+        scores.slice(0, 10).map((s, i) => `${i + 1}. ${s.name} - ${s.score}`).join('<br>');
+    
+    if (lbDisplay) lbDisplay.innerHTML = listHtml;
+    if (startLb) startLb.innerHTML = listHtml;
 }
 
 
@@ -303,7 +311,6 @@ function spawnAsteroid() {
     if (isGameOver) return;
 
     // 1. VARIETY IN SHAPE
-    // We mix Icosahedrons (smooth rocks), Tetrahedrons (sharp shards), and Dodecahedrons (blocky)
     const geometries = [
         new THREE.IcosahedronGeometry(1, 0),
         new THREE.TetrahedronGeometry(1, 0),
@@ -313,51 +320,46 @@ function spawnAsteroid() {
 
     // 2. VARIETY IN SIZE
     const isHeavy = Math.random() > 0.85;
-    // Scale is now randomized even for regular asteroids
-    const size = isHeavy ? 3.8 : (Math.random() * 1.5 + 0.5);
+    const size = isHeavy ? (4 + Math.random() * 2) : (Math.random() * 1.8 + 0.8);
 
-    // 3. VARIETY IN COLOR (Space Palettes)
-    const colors = [
-        0xDAA520, // Goldenrod (Standard)
-        0x8B4513, // Saddle Brown (Iron-rich)
-        0x696969, // Dim Gray (Carbonaceous)
-        0xA9A9A9  // Dark Gray (Silicate)
-    ];
-    const color = isHeavy ? 0xff0000 : colors[Math.floor(Math.random() * colors.length)];
+    // 3. COLOR & HIGH VISIBILITY MATERIAL
+    const colors = [0xDAA520, 0x8B4513, 0x696969, 0xA9A9A9];
+    const color = isHeavy ? 0xff4400 : colors[Math.floor(Math.random() * colors.length)];
 
     const a = new THREE.Mesh(
-    baseGeo,
-    new THREE.MeshStandardMaterial({
-        color: color,
-        flatShading: true, // Highlights the facets of the rock
-        roughness: 0.5,
-        metalness: 0.2,
-        emissive: color,   // Adds a faint glow of its own color
-        emissiveIntensity: 0.2 // Just enough to make it visible in the dark
-    })
-);
+        baseGeo,
+        new THREE.MeshStandardMaterial({
+            color: color,
+            flatShading: true,
+            emissive: color,
+            emissiveIntensity: 0.6, // Higher intensity for better visibility
+            metalness: 0.4,
+            roughness: 0.3
+        })
+    );
 
-    // Apply the random size scale
+    // Dynamic light based on size
+    const light = new THREE.PointLight(color, isHeavy ? 15 : 5, 10);
+    a.add(light);
+
     a.scale.set(size, size, size);
-
-    // Add minor distortion so they aren't perfect spheres
     a.scale.x *= (0.8 + Math.random() * 0.4);
     a.scale.y *= (0.8 + Math.random() * 0.4);
 
-    // 4. VARIETY IN POSITION & PHYSICS
-    a.position.set(THREE.MathUtils.randFloatSpread(32), 0, -150);
+    // 4. POSITION & PHYSICS
+    // We spawn them slightly wider to account for player movement
+    a.position.set(THREE.MathUtils.randFloatSpread(40), 0, -180);
 
     a.userData = {
-        speed: (isHeavy ? 0.04 : (4 - size) * 0.06),
-        hp: isHeavy ? 4 : 1, // Heavies are now slightly tougher
+        // Speed now factors in the global warpFactor for a feeling of acceleration
+        speed: (isHeavy ? 0.05 : (5 - size) * 0.08) * warpFactor,
+        hp: isHeavy ? 6 : 1, 
         isHeavy: isHeavy,
         color: color,
-        // Random tumble/rotation on all 3 axes
-        rotX: (Math.random() - 0.5) * 0.05,
-        rotY: (Math.random() - 0.5) * 0.05,
-        // The sine-wave curve properties we added earlier
-        curveAmount: (Math.random() - 0.5) * 0.2,
-        curveSpeed: Math.random() * 0.03
+        rotX: (Math.random() - 0.5) * 0.08,
+        rotY: (Math.random() - 0.5) * 0.08,
+        curveAmount: (Math.random() - 0.5) * 0.25,
+        curveSpeed: Math.random() * 0.04
     };
 
     scene.add(a);
@@ -381,42 +383,55 @@ function spawnPowerUp() {
 function handleGameOver() {
     isGameOver = true;
 
-    // 1. Save High Scores to LocalStorage
-    let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
-    scores.push(score);
-    scores.sort((a, b) => b - a);
-    localStorage.setItem('highscores', JSON.stringify(scores.slice(0, 5)));
-
-    // 2. Get the final time from the UI
+    // 1. Get final stats
     const finalTime = document.getElementById('timer')?.innerText || "00:00";
-
-    // 3. Populate the Game Over Overlay
     const statsEl = document.getElementById('final-stats');
     if (statsEl) {
         statsEl.innerHTML = `FINAL SCORE: ${score}<br>TIME IN SECTOR: ${finalTime}`;
     }
 
-    const lbDisplay = document.getElementById('leaderboard-display');
-    if (lbDisplay) {
-        lbDisplay.innerHTML = "<h3 style='margin:10px 0'>TOP CAPTAINS</h3>" +
-            scores.slice(0, 5).map((s, i) => `<p style='margin:5px 0'>${i + 1}. ${s}</p>`).join('');
-    }
-
-    // 4. Reveal the Overlay
+    // 2. Show the overlay and the name entry section
     const overlay = document.getElementById('game-over-overlay');
-    if (overlay) {
-        overlay.style.display = 'flex'; // Changed from 'none' to 'flex'
-    }
+    const nameEntry = document.getElementById('name-entry-section');
+    if (overlay) overlay.style.display = 'flex';
+    if (nameEntry) nameEntry.style.display = 'block';
 
-    // 5. Cleanup the "Pixels" (Particles)
-    // We clear the scene objects so the background looks clean behind the overlay
+    // 3. Setup the Submit Button
+    const saveBtn = document.getElementById('save-score-btn');
+    saveBtn.onclick = () => {
+        const nameInput = document.getElementById('player-name').value.toUpperCase() || "???";
+        saveHighScore(nameInput, score);
+        
+        // Hide entry field and refresh the board
+        nameEntry.style.display = 'none';
+        displayLeaderboard();
+    };
+
+    // 4. Initial board display (showing existing records)
+    displayLeaderboard();
+
+    // 5. Cleanup
     particles.forEach(p => scene.remove(p));
     asteroids.forEach(a => scene.remove(a));
     bullets.forEach(b => scene.remove(b));
-
-    // Note: We no longer call location.reload() here. 
-    // The "RE-ENGAGE" button in the HTML will handle the reload.
 }
+
+function saveHighScore(name, newScore) {
+    // 1. Load existing scores
+    let scores = JSON.parse(localStorage.getItem('highscores') || '[]');
+    
+    // 2. Add new record
+    scores.push({ name: name, score: newScore });
+    
+    // 3. Sort by score (highest first)
+    scores.sort((a, b) => b.score - a.score);
+    
+    // 4. Trim to top 10 and save
+    const topTen = scores.slice(0, 10);
+    localStorage.setItem('highscores', JSON.stringify(topTen));
+}
+
+
 
 // --- 8. INPUTS ---
 window.addEventListener('keydown', (e) => keys[e.code] = true);
@@ -480,23 +495,21 @@ function animate() {
     if (isGameOver) return;
     requestAnimationFrame(animate);
 
-    const now = Date.now();
+// --- BALANCED SPAWNING ---
+const now = Date.now();
+// Score / 200 is very gradual. At 10,000 score, interval is 1.95s.
+asteroidSpawnInterval = Math.max(800, 2000 - (score / 200)); 
 
-    // Divisor increased to 100 for a much slower, gradual ramp-up
-    // This means every 1,000 points reduces the delay by only 10ms
-    asteroidSpawnInterval = Math.max(600, 2000 - (score / 100));
-
-    if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
-        spawnAsteroid();
-        lastAsteroidSpawn = now;
-    }
-
+if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
+    spawnAsteroid();
+    lastAsteroidSpawn = now;
+}
     // --- 1. CAMERA & WORLD UPDATES ---
     // Smoothly return camera to center (0, 12, 18)
     camera.position.x += (0 - camera.position.x) * 0.1;
     camera.position.y += (12 - camera.position.y) * 0.1;
 
-    warpFactor = 1.0 + (score / 5000);
+    warpFactor = 1.0 + (score / 20000);
 
         // Update UI (toFixed(1) keeps it to one decimal point like "1.2c")
     const velocityEl = document.getElementById('velocity');
