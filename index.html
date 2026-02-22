@@ -3,32 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <title>Space Shooter</title>
-    <link rel="stylesheet" href="css/style.css">
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Courier New', Courier, monospace; }
+        
+        /* Ensure the 3D canvas stays in the background */
+        canvas { display: block; }
+
+        #ui {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #00ffcc;
+            pointer-events: none; /* Allows clicks to pass through to the game */
+            text-shadow: 0 0 5px #00ffcc;
+            line-height: 1.6;
+            z-index: 10;
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            width: 100%;
+            text-align: center;
+            color: rgba(0, 255, 204, 0.5);
+            font-size: 12px;
+            letter-spacing: 2px;
+            z-index: 5;
+        }
+
+        /* Boss UI Enhancements */
+        #boss-ui {
+            display: none;
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            height: 15px;
+            border: 1px solid #ff00ff;
+            background: rgba(255, 0, 255, 0.1);
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.3);
+            z-index: 20;
+        }
+        
+        #boss-label {
+            position: absolute;
+            top: -20px;
+            width: 100%;
+            text-align: center;
+            color: #ff00ff;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        #boss-hp-fill {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, #ff00ff, #aa00ff);
+            transition: width 0.2s ease-out;
+        }
+    </style>
 </head>
 <body>
-    <div id="overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.8); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:1000; color:white;">
-    <h1>STARS TREKING: WARP SECTOR</h1>
-    <button id="start-btn" style="padding:15px 30px; font-size:20px; cursor:pointer; background:#00ffff; border:none; border-radius:5px;">ENGAGE</button>
+
+<div id="overlay" style="position:fixed; top:0; left:0; width:100%; height:100%; background:radial-gradient(circle, #001122 0%, #000000 100%); display:flex; flex-direction:column; justify-content:center; align-items:center; z-index:1000; color:white;">
+    <h1 style="letter-spacing: 10px; text-shadow: 0 0 20px #00ffff;">STARS TREKING</h1>
+    <h3 style="color: #00aaff; margin-bottom: 30px;">WARP SECTOR</h3>
+    <div id="leaderboard" style="margin-bottom: 20px; color: #00ff00; text-align: center;"></div>
+    <button id="start-btn" style="padding:15px 40px; font-size:20px; cursor:pointer; background:transparent; border: 2px solid #00ffff; color: #00ffff; font-family: inherit; font-weight: bold; transition: 0.3s;">ENGAGE</button>
 </div>
 
 <div id="ui">
+    [RADAR ACTIVE]<br>
     SCORE: <span id="score">0</span><br>
     TIME: <span id="timer">00:00</span><br> 
-    HULL: <span id="health-bar" style="color: #ff0000;">███</span><br>
-    BONUS <span id="multiplier-ui" style="color: #ffff00; font-weight: bold;"></span><br>
+    HULL: <span id="health-bar">███</span><br>
+    <span id="multiplier-ui" style="color: #ffff00; font-weight: bold;"></span>
 </div>    
-    <div id="leaderboard" style="position: absolute; top: 150px; left: 20px; color: #00ff00; font-family: monospace;"></div>
-    <div id="instructions">WASD/ARROWS to Move | SPACE to Shoot</div>
-    
-    <div id="game-over-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); color: white; flex-direction: column; align-items: center; justify-content: center; z-index: 100; font-family: 'Courier New', Courier, monospace; text-align: center;">
-    <h1 style="color: #ff0000; font-size: 48px; margin-bottom: 10px;">MISSION FAILED</h1>
+
+<div id="boss-ui">
+    <div id="boss-label">UNKNOWN INTERCEPTOR</div>
+    <div id="boss-hp-fill"></div>
+</div>
+
+<div id="instructions">W/A/S/D TO NAVIGATE • SPACE TO DISCHARGE PHASERS</div>
+
+<div id="game-over-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(20,0,0,0.9); color: white; flex-direction: column; align-items: center; justify-content: center; z-index: 1100; font-family: 'Courier New', Courier, monospace; text-align: center;">
+    <h1 style="color: #ff3333; font-size: 48px; margin-bottom: 10px; text-shadow: 0 0 10px #ff0000;">MISSION FAILED</h1>
     <p id="final-stats" style="font-size: 24px; margin-bottom: 20px;"></p>
     
-    <div id="leaderboard-display" style="background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px; margin-bottom: 30px; min-width: 250px;">
+    <div id="leaderboard-display" style="background: rgba(255,255,255,0.05); padding: 20px; border: 1px dashed #666; border-radius: 10px; margin-bottom: 30px; min-width: 250px;">
         </div>
 
-<button onclick="location.reload()" style="padding: 15px 40px; font-size: 1.2rem; cursor: pointer; background: #00aaff; color: white; border: none; border-radius: 5px; font-weight: bold;">RE-ENGAGE</button></div>
-
+    <button onclick="location.reload()" style="padding: 15px 40px; font-size: 1.2rem; cursor: pointer; background: #ff3333; color: white; border: none; border-radius: 5px; font-weight: bold; font-family: inherit;">RE-ENGAGE</button>
+</div>
 
     <script type="importmap">
         {

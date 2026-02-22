@@ -20,8 +20,12 @@ let ufo = null;
 let ufoActive = false;
 let lastUfoShot = 0;
 
+let ufoHP = 20;            
+let maxUfoHP = 20; // Added this to track percentage for the bar
+let maxHealth = 3;         
+let ufoLevel = 1;
+let targetPitch = 0; // Added to prevent undefined error in animate()
 
-let ufoHP = 20; // It takes 20 laser hits or sustained beam damage to destroy
 
 const ufoProjectiles = [];
 
@@ -158,25 +162,43 @@ function spawnUfo() {
     if (ufoActive) return;
     ufoActive = true;
 
+    ufoHP = 15 + (ufoLevel * 10);
+    maxUfoHP = ufoHP;
+
     ufo = new THREE.Group();
-    
-    // Saucer Body
+
+    // 1. Saucer Body with higher metalness for reflections
     const body = new THREE.Mesh(
-        new THREE.SphereGeometry(1.5, 32, 8),
-        new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.1 })
+        new THREE.SphereGeometry(1.8, 32, 12),
+        new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 1, roughness: 0.2 })
     );
     body.scale.y = 0.3;
 
-    // Cockpit Dome
+    // 2. Glowing Cockpit
     const dome = new THREE.Mesh(
-        new THREE.SphereGeometry(0.6, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 2, transparent: true, opacity: 0.6 })
+        new THREE.SphereGeometry(0.7, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 5 })
     );
     dome.position.y = 0.1;
 
-    ufo.add(body, dome);
-    ufo.position.set(0, 0, -80); // Start far away in the distance
+    // 3. UNDER-LIGHT (Makes it very visible)
+    const ufoLight = new THREE.PointLight(0x00ff00, 10, 15);
+    ufoLight.position.set(0, -1, 0);
+
+    // 4. Energy Rim (Visual feedback for hits)
+    const rim = new THREE.Mesh(
+        new THREE.TorusGeometry(1.9, 0.05, 8, 32),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 })
+    );
+    rim.rotation.x = Math.PI / 2;
+
+    ufo.add(body, dome, ufoLight, rim);
+    ufo.position.set(0, 0, -80); 
     scene.add(ufo);
+
+    const bossUI = document.getElementById('boss-ui');
+    if (bossUI) bossUI.style.display = 'block';
+
 }
 
 function fireUfoProjectile() {
@@ -218,8 +240,18 @@ function playExplosionSound() {
 
 // --- 7. CORE FUNCTIONS ---
 function updateHealthUI() {
-    const hb = document.getElementById('health-bar');
-    if (hb) hb.innerText = "█".repeat(Math.max(0, health));
+    const healthBar = document.getElementById('health-bar');
+    if (!healthBar) return;
+
+    let barDisplay = "";
+    // Draw slots based on the dynamic maxHealth
+    for (let i = 0; i < maxHealth; i++) {
+        barDisplay += (i < health) ? "█" : "░";
+    }
+    healthBar.innerText = barDisplay;
+    
+    // Color coding
+    healthBar.style.color = (health <= 1) ? "#ff3333" : "#00ffcc";
 }
 
 function displayLeaderboard() {
@@ -394,79 +426,78 @@ document.getElementById('start-btn').addEventListener('click', () => {
     animate();
 });
 
+function handleUfoDefeat() {
+    createExplosion(ufo.position, 0x00ff00);
+    
+    // Increment the cap and heal the player
+    maxHealth += 1; 
+    health = maxHealth; 
+    updateHealthUI(); 
+    
+    addScore(2000);
+    
+    // UI cleanup
+    document.getElementById('boss-ui').style.display = 'none';
+    scene.remove(ufo);
+    ufo = null;
+    ufoActive = false;
+}
+function updateBossUI() {
+    const fill = document.getElementById('boss-hp-fill');
+    if (fill) {
+        const pct = Math.max(0, (ufoHP / maxUfoHP) * 100);
+        fill.style.width = pct + "%";
+    }
+}
 // --- 9. MAIN LOOP ---
 function animate() {
     if (isGameOver) return;
     requestAnimationFrame(animate);
 
-    // 1. CAMERA & WORLD UPDATES
-    // Return camera to center from any screen shake
+    // --- 1. CAMERA & WORLD UPDATES ---
     camera.position.x += (0 - camera.position.x) * 0.1;
     camera.position.y += (12 - camera.position.y) * 0.1;
 
     warpFactor = 1.0 + (score / 5000);
-
     starField.position.z += 0.15 * warpFactor;
     if (starField.position.z > 100) starField.position.z = 0;
 
-    // Combo Timer Decay
     if (comboTimer > 0) comboTimer--;
-    else { combo = 0; if (document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = ""; }
-
-    // 2. SHIP MOVEMENT (Locked Y Axis)
-    const speed = 0.2;
-    if (keys['KeyA'] || keys['ArrowLeft']) playerGroup.position.x -= speed;
-    if (keys['KeyD'] || keys['ArrowRight']) playerGroup.position.x += speed;
-    if (keys['KeyW'] || keys['ArrowUp']) playerGroup.position.z -= speed;
-    if (keys['KeyS'] || keys['ArrowDown']) playerGroup.position.z += speed;
-
-    // Enforce Boundaries (x: left/right, z: forward/back, y: locked)
-    playerGroup.position.x = Math.max(-18, Math.min(18, playerGroup.position.x));
-    playerGroup.position.z = Math.max(-18, Math.min(16, playerGroup.position.z));
-    playerGroup.position.y = 0; // Hard lock on Y axis
-
-
-    // --- DYNAMIC BANKING LOGIC ---
-    if (keys['KeyA'] || keys['ArrowLeft']) {
-        targetRoll = 0.4; // Roll left
-    } else if (keys['KeyD'] || keys['ArrowRight']) {
-        targetRoll = -0.4; // Roll right
-    } else {
-        targetRoll = 0; // Level out
+    else { 
+        combo = 0; 
+        if (document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = ""; 
     }
 
-    // Smoothly interpolate the rotation for a "weighted" feel
-    playerGroup.rotation.z = THREE.MathUtils.lerp(playerGroup.rotation.z, targetRoll, 0.1);
+    // --- 2. SHIP MOVEMENT & DYNAMIC BANKING ---
+    const speed = 0.2;
+    if (keys['KeyA'] || keys['ArrowLeft']) { playerGroup.position.x -= speed; targetRoll = 0.4; }
+    else if (keys['KeyD'] || keys['ArrowRight']) { playerGroup.position.x += speed; targetRoll = -0.4; }
+    else { targetRoll = 0; }
 
-    // Optional: Add a slight pitch (tip up/down) when moving forward/back
-    let targetPitch = 0;
-    if (keys['KeyW'] || keys['ArrowUp']) targetPitch = 0.15;
-    if (keys['KeyS'] || keys['ArrowDown']) targetPitch = -0.15;
+    if (keys['KeyW'] || keys['ArrowUp']) { playerGroup.position.z -= speed; targetPitch = 0.15; }
+    else if (keys['KeyS'] || keys['ArrowDown']) { playerGroup.position.z += speed; targetPitch = -0.15; }
+    else { targetPitch = 0; }
+
+    playerGroup.position.x = Math.max(-18, Math.min(18, playerGroup.position.x));
+    playerGroup.position.z = Math.max(-18, Math.min(16, playerGroup.position.z));
+    playerGroup.position.y = 0;
+
+    playerGroup.rotation.z = THREE.MathUtils.lerp(playerGroup.rotation.z, targetRoll, 0.1);
     playerGroup.rotation.x = THREE.MathUtils.lerp(playerGroup.rotation.x, targetPitch, 0.1);
 
-
-    // 3. CONTINUOUS BEAM LASER (Purple Power-up)
+    // --- 3. CONTINUOUS BEAM LASER ---
     if (keys['Space'] && beamPowerTime > 0) {
         beamMesh.visible = true;
         beamLight.visible = true;
         beamPowerTime--;
-
-        // Position beam at ship, extending 50 units forward
         beamMesh.position.set(playerGroup.position.x, 0, playerGroup.position.z - 25);
-        beamMesh.scale.set(1, 50, 1);
-        beamLight.position.set(playerGroup.position.x, 0, playerGroup.position.z - 5);
-
-        // Vibration effect for the beam
         camera.position.x += (Math.random() - 0.5) * 0.06;
 
         for (let i = asteroids.length - 1; i >= 0; i--) {
             const a = asteroids[i];
-            const xDist = Math.abs(a.position.x - playerGroup.position.x);
-            // Check if asteroid is in the path of the horizontal beam
-            if (xDist < a.geometry.parameters.radius + 0.4 && a.position.z < playerGroup.position.z) {
-                a.userData.hp -= 0.15; // Damage over time
-                a.material.emissive.setHex(0xffffff); // Heat glow
-
+            if (Math.abs(a.position.x - playerGroup.position.x) < a.geometry.parameters.radius + 0.4 && a.position.z < playerGroup.position.z) {
+                a.userData.hp -= 0.15;
+                a.material.emissive.setHex(0xffffff);
                 if (a.userData.hp <= 0) {
                     createExplosion(a.position, a.userData.color);
                     addScore(a.userData.isHeavy ? 300 : 100);
@@ -480,30 +511,54 @@ function animate() {
         beamLight.visible = false;
     }
 
-    // --- UFO LOGIC ---
-    if (score >= 5000) {
-        if (!ufoActive) spawnUfo();
+        // --- 4. UFO BOSS LOGIC (FIXED) ---
+        if (score >= 5000) {
+            if (!ufoActive) spawnUfo();
 
-        // 1. Hover Behavior: Stalk the player's X position
-        // The UFO stays out of range at Z = -40
-        ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
-        ufo.position.x = THREE.MathUtils.lerp(ufo.position.x, playerGroup.position.x, 0.03);
-        ufo.rotation.y += 0.05; // Make the saucer spin!
-        
-        // 2. UFO Firing (Every 2 seconds)
-        let now = Date.now();
-        if (now - lastUfoShot > 2000) {
-            fireUfoProjectile();
-            lastUfoShot = now;
+            if (ufoActive && ufo) {
+                ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
+                ufo.position.x = THREE.MathUtils.lerp(ufo.position.x, playerGroup.position.x, 0.03);
+                ufo.rotation.y += 0.05;
+
+                if (Date.now() - lastUfoShot > 2000) {
+                    fireUfoProjectile();
+                    lastUfoShot = Date.now();
+                }
+
+                // Standard Phasers Hit Detection
+                for (let j = bullets.length - 1; j >= 0; j--) {
+                    const bullet = bullets[j];
+                    if (bullet.position.distanceTo(ufo.position) < 3.2) { // Detection radius
+                        ufoHP--;
+                        updateBossUI();
+                        
+                        // Visual feedback: Flash the saucer body
+                        if (ufo.children[0]) {
+                            ufo.children[0].material.emissive.setHex(0x00ff00);
+                            setTimeout(() => { if (ufo) ufo.children[0].material.emissive.setHex(0x000000); }, 50);
+                        }
+
+                        createExplosion(bullet.position, 0x00ff00);
+                        scene.remove(bullet);
+                        bullets.splice(j, 1);
+                    }
+                }
+
+                // Beam Hit Detection
+                if (beamMesh.visible && Math.abs(ufo.position.x - playerGroup.position.x) < 2.8) {
+                    ufoHP -= 0.15; 
+                    updateBossUI();
+                    if (ufo.children[0]) ufo.children[0].material.emissive.setHex(0x00ff00);
+                }
+
+                if (ufoHP <= 0) handleUfoDefeat();
+            }
         }
-    }
 
-    // 3. Enemy Projectile Movement & Collision
+    // --- 5. UFO PROJECTILES ---
     for (let i = ufoProjectiles.length - 1; i >= 0; i--) {
         const p = ufoProjectiles[i];
-        p.position.z += 0.5; // Move toward player
-
-        // Hit Detection
+        p.position.z += 0.5;
         if (p.position.distanceTo(playerGroup.position) < 1.5) {
             if (!hasShield) {
                 health--;
@@ -518,57 +573,37 @@ function animate() {
             createExplosion(playerGroup.position, 0xff00ff);
             continue;
         }
-
-        // Cleanup
-        if (p.position.z > 30) {
-            scene.remove(p);
-            ufoProjectiles.splice(i, 1);
-        }
+        if (p.position.z > 30) { scene.remove(p); ufoProjectiles.splice(i, 1); }
     }
 
-    // 4. POWER-UPS & PARTICLES
+    // --- 6. POWER-UPS & ASTEROIDS ---
     for (let i = powerUps.length - 1; i >= 0; i--) {
         const p = powerUps[i]; p.position.z += 0.12 * warpFactor;
         if (playerGroup.position.distanceTo(p.position) < 2.0) {
             if (p.userData.type === 'laser') beamPowerTime = 300;
             else if (p.userData.type === 'triple') { isTripleShot = true; setTimeout(() => isTripleShot = false, 10000); }
             else if (p.userData.type === 'shield') { hasShield = true; shieldBubble.visible = true; }
-            else if (p.userData.type === 'health') { if (health < 3) health++; updateHealthUI(); }
+            else if (p.userData.type === 'health') { if (health < maxHealth) health++; updateHealthUI(); }
             scene.remove(p); powerUps.splice(i, 1);
         }
     }
 
-    // 5. ASTEROID PHYSICS & PHASER COLLISION
     for (let i = asteroids.length - 1; i >= 0; i--) {
         const a = asteroids[i];
-
-        // 1. FORWARD MOVEMENT 
-        // Speed increases based on score (warpFactor)
-        const currentSpeed = a.userData.speed * warpFactor;
-        a.position.z += currentSpeed;
-
-        // 2. CURVED TRAJECTORY
-        // Uses the asteroid's unique curve speed/amount for a "snake" path
+        a.position.z += a.userData.speed * warpFactor;
         a.position.x += Math.sin(a.position.z * a.userData.curveSpeed) * a.userData.curveAmount;
-
-        // 3. MULTI-AXIS TUMBLE
-        // We now rotate on X and Y for a realistic zero-G drift
-        a.rotation.x += a.userData.rotX || 0.02; // Fallback in case old rocks exist
+        a.rotation.x += a.userData.rotX || 0.02;
         a.rotation.y += a.userData.rotY || 0.01;
-
-        // 4. PLANE LOCK
-        // Keeps everything strictly on the flat horizontal plane
         a.position.y = 0;
 
-
-        // Player Impact
+        // Asteroid Player Impact
         if (playerGroup.position.distanceTo(a.position) < 1.5 + a.geometry.parameters.radius) {
             if (hasShield) { hasShield = false; shieldBubble.visible = false; }
             else { health--; updateHealthUI(); if (health <= 0) { handleGameOver(); return; } }
             createExplosion(a.position, 0xff0000); scene.remove(a); asteroids.splice(i, 1); continue;
         }
 
-        // Standard Phasers (Bullets)
+        // Asteroid Phaser Impact
         for (let j = bullets.length - 1; j >= 0; j--) {
             if (bullets[j].position.distanceTo(a.position) < a.geometry.parameters.radius + 0.6) {
                 a.userData.hp--;
@@ -587,45 +622,29 @@ function animate() {
         if (a && a.position.z > 30) { scene.remove(a); asteroids.splice(i, 1); }
     }
 
-    // 6. BULLET MOVEMENT
+    // --- 7. BULLET MOVEMENT & FX ---
     for (let i = bullets.length - 1; i >= 0; i--) {
-        // Projectiles move forward
-        bullets[i].position.z -= 1.2; // Slightly faster phasers for the longer distance
-
-        // Extended distance: Clean up at -200 instead of -100
-        if (bullets[i].position.z < -200) {
-            scene.remove(bullets[i]);
-            bullets.splice(i, 1);
-        }
+        bullets[i].position.z -= 1.2;
+        if (bullets[i].position.z < -200) { scene.remove(bullets[i]); bullets.splice(i, 1); }
     }
 
-    const enginePulse = 1.5 + Math.sin(Date.now() * 0.005) * 0.5;
-    engineMat.emissiveIntensity = enginePulse;
+    engineMat.emissiveIntensity = 1.5 + Math.sin(Date.now() * 0.005) * 0.5;
     deflectorMat.emissiveIntensity = 1 + Math.sin(Date.now() * 0.002) * 0.3;
 
-    // --- PARTICLES CLEANUP ---
+    // --- 8. PARTICLES CLEANUP ---
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
-
-        // Move the particle
         p.position.add(p.userData.velocity);
-
-        // Fade out
-        p.userData.life -= 0.02; // Decrease life every frame
+        p.userData.life -= 0.02;
         p.material.opacity = p.userData.life;
-
-        // Shrink slightly for a better effect
         p.scale.multiplyScalar(0.96);
-
-        // If life is gone, remove from scene AND array
-        if (p.userData.life <= 0) {
-            scene.remove(p);            // Remove from 3D world
-            particles.splice(i, 1);     // Remove from tracking array
-        }
+        if (p.userData.life <= 0) { scene.remove(p); particles.splice(i, 1); }
     }
 
     renderer.render(scene, camera);
 }
-
-updateHealthUI();
-displayLeaderboard();
+// Change the very last lines to this:
+window.onload = () => {
+    updateHealthUI();
+    displayLeaderboard();
+};
