@@ -119,13 +119,17 @@ camera.lookAt(0, 0, -5);
 
 // --- 4. BEAM LASER MESH ---
 const beamMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.15, 0.15, 1, 8),
-    new THREE.MeshBasicMaterial({ color: 0xcc00ff, transparent: true, opacity: 0.8 })
+    new THREE.CylinderGeometry(0.3, 0.3, 1, 12), // Radius 0.3, Height 1
+    new THREE.MeshBasicMaterial({ 
+        color: 0xcc00ff, 
+        transparent: true, 
+        opacity: 0.8,
+        blending: THREE.AdditiveBlending // This makes it look like "light"
+    })
 );
-beamMesh.rotation.x = Math.PI / 2;
-beamMesh.visible = false;
-scene.add(beamMesh);
 
+beamMesh.rotation.x = Math.PI / 2; // Lay it flat
+scene.add(beamMesh);
 const beamLight = new THREE.PointLight(0xcc00ff, 5, 15);
 beamLight.visible = false;
 scene.add(beamLight);
@@ -496,31 +500,52 @@ function animate() {
     playerGroup.rotation.z = THREE.MathUtils.lerp(playerGroup.rotation.z, targetRoll, 0.1);
     playerGroup.rotation.x = THREE.MathUtils.lerp(playerGroup.rotation.x, targetPitch, 0.1);
 
-    // --- 3. CONTINUOUS BEAM LASER ---
-    if (keys['Space'] && beamPowerTime > 0) {
-        beamMesh.visible = true;
-        beamLight.visible = true;
-        beamPowerTime--;
-        beamMesh.position.set(playerGroup.position.x, 0, playerGroup.position.z - 25);
-        camera.position.x += (Math.random() - 0.5) * 0.1; // Beam shake
+   // --- 3. CONTINUOUS BEAM LASER ---
+if (keys['Space'] && beamPowerTime > 0) {
+    beamMesh.visible = true;
+    beamLight.visible = true;
+    beamPowerTime--;
 
-        for (let i = asteroids.length - 1; i >= 0; i--) {
-            const a = asteroids[i];
-            if (Math.abs(a.position.x - playerGroup.position.x) < a.geometry.parameters.radius + 0.4 && a.position.z < playerGroup.position.z) {
-                a.userData.hp -= 0.15;
-                a.material.emissive.setHex(0xffffff);
-                if (a.userData.hp <= 0) {
-                    createExplosion(a.position, a.userData.color);
-                    addScore(a.userData.isHeavy ? 300 : 100);
-                    scene.remove(a);
-                    asteroids.splice(i, 1);
-                }
+    // 1. SCALE: Make the beam very long (e.g., 60 units)
+    const beamLength = 60;
+    beamMesh.scale.set(1, beamLength, 1); 
+
+    // 2. POSITION: Move it forward by half its length so it starts at the ship
+    // If we don't do this, the beam will stick out the back of the ship too!
+    beamMesh.position.set(
+        playerGroup.position.x, 
+        playerGroup.position.y, 
+        playerGroup.position.z - (beamLength / 2)
+    );
+
+    // 3. LIGHTING: Keep the glow at the ship's nose
+    beamLight.position.set(playerGroup.position.x, 0, playerGroup.position.z - 2);
+
+    // FX: Add some "recoil" shake
+    camera.position.x += (Math.random() - 0.5) * 0.1;
+
+    // 4. HIT DETECTION (Beam Collision)
+    for (let i = asteroids.length - 1; i >= 0; i--) {
+        const a = asteroids[i];
+        // Check if asteroid is in front of ship and aligned with the beam width
+        if (a.position.z < playerGroup.position.z && 
+            Math.abs(a.position.x - playerGroup.position.x) < a.geometry.parameters.radius + 0.5) {
+            
+            a.userData.hp -= 0.2; // High damage per frame
+            if(a.material.emissive) a.material.emissive.setHex(0xffffff);
+            
+            if (a.userData.hp <= 0) {
+                createExplosion(a.position, a.userData.color);
+                addScore(a.userData.isHeavy ? 300 : 100);
+                scene.remove(a);
+                asteroids.splice(i, 1);
             }
         }
-    } else {
-        beamMesh.visible = false;
-        beamLight.visible = false;
     }
+} else {
+    beamMesh.visible = false;
+    beamLight.visible = false;
+}
 
             // --- 4. UFO BOSS LOGIC (WITH VARIABLE DELAY) ---
         if (score >= 5000 && !ufoActive) {
