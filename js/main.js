@@ -25,12 +25,14 @@ let lastUfoDefeatTime = 0;
 let nextUfoDelay = 0; // The randomized wait time
 
 
-let ufoHP = 20;            
+let ufoHP = 20;
 let maxUfoHP = 20; // Added this to track percentage for the bar
-let maxHealth = 3;         
+let maxHealth = 3;
 let ufoLevel = 1;
 let targetPitch = 0; // Added to prevent undefined error in animate()
-
+let ufosDefeated = 0;
+let asteroidSpawnInterval = 2000; // Base speed: 2 seconds
+let lastAsteroidSpawn = 0;
 
 const ufoProjectiles = [];
 
@@ -120,9 +122,9 @@ camera.lookAt(0, 0, -5);
 // --- 4. BEAM LASER MESH ---
 const beamMesh = new THREE.Mesh(
     new THREE.CylinderGeometry(0.3, 0.3, 1, 12), // Radius 0.3, Height 1
-    new THREE.MeshBasicMaterial({ 
-        color: 0xcc00ff, 
-        transparent: true, 
+    new THREE.MeshBasicMaterial({
+        color: 0xcc00ff,
+        transparent: true,
         opacity: 0.8,
         blending: THREE.AdditiveBlending // This makes it look like "light"
     })
@@ -202,7 +204,7 @@ function spawnUfo() {
     rim.rotation.x = Math.PI / 2;
 
     ufo.add(body, dome, ufoLight, rim);
-    ufo.position.set(0, 0, -80); 
+    ufo.position.set(0, 0, -80);
     scene.add(ufo);
 
     const bossUI = document.getElementById('boss-ui');
@@ -258,7 +260,7 @@ function updateHealthUI() {
         barDisplay += (i < health) ? "█" : "░";
     }
     healthBar.innerText = barDisplay;
-    
+
     // Color coding
     healthBar.style.color = (health <= 1) ? "#ff3333" : "#00ffcc";
 }
@@ -324,13 +326,16 @@ function spawnAsteroid() {
     const color = isHeavy ? 0xff0000 : colors[Math.floor(Math.random() * colors.length)];
 
     const a = new THREE.Mesh(
-        baseGeo,
-        new THREE.MeshStandardMaterial({
-            color: color,
-            flatShading: true,
-            roughness: 1.0
-        })
-    );
+    baseGeo,
+    new THREE.MeshStandardMaterial({
+        color: color,
+        flatShading: true, // Highlights the facets of the rock
+        roughness: 0.5,
+        metalness: 0.2,
+        emissive: color,   // Adds a faint glow of its own color
+        emissiveIntensity: 0.2 // Just enough to make it visible in the dark
+    })
+);
 
     // Apply the random size scale
     a.scale.set(size, size, size);
@@ -438,6 +443,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
 function handleUfoDefeat() {
     createExplosion(ufo.position, 0x00ff00);
     
+    ufosDefeated++; 
+    
+    // UPDATE THE UI ELEMENT HERE
+    const ufoCountEl = document.getElementById('ufo-counter');
+    if (ufoCountEl) {
+        ufoCountEl.innerText = ufosDefeated;
+    }
+
     maxHealth += 1; 
     health = maxHealth; 
     updateHealthUI(); 
@@ -449,10 +462,9 @@ function handleUfoDefeat() {
     ufo = null;
     ufoActive = false;
 
-    // --- NEW LOGIC: Start the cooldown ---
+    // Cooldown logic
     lastUfoDefeatTime = Date.now();
-    ufoSpawningInitiated = false; // Reset for the next cycle
-    // Randomize next delay between 5,000ms and 20,000ms
+    ufoSpawningInitiated = false;
     nextUfoDelay = Math.random() * (20000 - 5000) + 5000;
 }
 
@@ -468,19 +480,35 @@ function animate() {
     if (isGameOver) return;
     requestAnimationFrame(animate);
 
+    const now = Date.now();
+
+    // Divisor increased to 100 for a much slower, gradual ramp-up
+    // This means every 1,000 points reduces the delay by only 10ms
+    asteroidSpawnInterval = Math.max(600, 2000 - (score / 100));
+
+    if (now - lastAsteroidSpawn > asteroidSpawnInterval) {
+        spawnAsteroid();
+        lastAsteroidSpawn = now;
+    }
+
     // --- 1. CAMERA & WORLD UPDATES ---
     // Smoothly return camera to center (0, 12, 18)
     camera.position.x += (0 - camera.position.x) * 0.1;
     camera.position.y += (12 - camera.position.y) * 0.1;
 
     warpFactor = 1.0 + (score / 5000);
+
+        // Update UI (toFixed(1) keeps it to one decimal point like "1.2c")
+    const velocityEl = document.getElementById('velocity');
+    if (velocityEl) velocityEl.innerText = warpFactor.toFixed(1);
+
     starField.position.z += 0.15 * warpFactor;
     if (starField.position.z > 100) starField.position.z = 0;
 
     if (comboTimer > 0) comboTimer--;
-    else { 
-        combo = 0; 
-        if (document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = ""; 
+    else {
+        combo = 0;
+        if (document.getElementById('multiplier-ui')) document.getElementById('multiplier-ui').innerText = "";
     }
 
     // --- 2. SHIP MOVEMENT & DYNAMIC BANKING ---
@@ -500,80 +528,80 @@ function animate() {
     playerGroup.rotation.z = THREE.MathUtils.lerp(playerGroup.rotation.z, targetRoll, 0.1);
     playerGroup.rotation.x = THREE.MathUtils.lerp(playerGroup.rotation.x, targetPitch, 0.1);
 
-   // --- 3. CONTINUOUS BEAM LASER ---
-if (keys['Space'] && beamPowerTime > 0) {
-    beamMesh.visible = true;
-    beamLight.visible = true;
-    beamPowerTime--;
+    // --- 3. CONTINUOUS BEAM LASER ---
+    if (keys['Space'] && beamPowerTime > 0) {
+        beamMesh.visible = true;
+        beamLight.visible = true;
+        beamPowerTime--;
 
-    // 1. SCALE: Make the beam very long (e.g., 60 units)
-    const beamLength = 60;
-    beamMesh.scale.set(1, beamLength, 1); 
+        // 1. SCALE: Make the beam very long (e.g., 60 units)
+        const beamLength = 60;
+        beamMesh.scale.set(1, beamLength, 1);
 
-    // 2. POSITION: Move it forward by half its length so it starts at the ship
-    // If we don't do this, the beam will stick out the back of the ship too!
-    beamMesh.position.set(
-        playerGroup.position.x, 
-        playerGroup.position.y, 
-        playerGroup.position.z - (beamLength / 2)
-    );
+        // 2. POSITION: Move it forward by half its length so it starts at the ship
+        // If we don't do this, the beam will stick out the back of the ship too!
+        beamMesh.position.set(
+            playerGroup.position.x,
+            playerGroup.position.y,
+            playerGroup.position.z - (beamLength / 2)
+        );
 
-    // 3. LIGHTING: Keep the glow at the ship's nose
-    beamLight.position.set(playerGroup.position.x, 0, playerGroup.position.z - 2);
+        // 3. LIGHTING: Keep the glow at the ship's nose
+        beamLight.position.set(playerGroup.position.x, 0, playerGroup.position.z - 2);
 
-    // FX: Add some "recoil" shake
-    camera.position.x += (Math.random() - 0.5) * 0.1;
+        // FX: Add some "recoil" shake
+        camera.position.x += (Math.random() - 0.5) * 0.1;
 
-    // 4. HIT DETECTION (Beam Collision)
-    for (let i = asteroids.length - 1; i >= 0; i--) {
-        const a = asteroids[i];
-        // Check if asteroid is in front of ship and aligned with the beam width
-        if (a.position.z < playerGroup.position.z && 
-            Math.abs(a.position.x - playerGroup.position.x) < a.geometry.parameters.radius + 0.5) {
-            
-            a.userData.hp -= 0.2; // High damage per frame
-            if(a.material.emissive) a.material.emissive.setHex(0xffffff);
-            
-            if (a.userData.hp <= 0) {
-                createExplosion(a.position, a.userData.color);
-                addScore(a.userData.isHeavy ? 300 : 100);
-                scene.remove(a);
-                asteroids.splice(i, 1);
+        // 4. HIT DETECTION (Beam Collision)
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+            const a = asteroids[i];
+            // Check if asteroid is in front of ship and aligned with the beam width
+            if (a.position.z < playerGroup.position.z &&
+                Math.abs(a.position.x - playerGroup.position.x) < a.geometry.parameters.radius + 0.5) {
+
+                a.userData.hp -= 0.2; // High damage per frame
+                if (a.material.emissive) a.material.emissive.setHex(0xffffff);
+
+                if (a.userData.hp <= 0) {
+                    createExplosion(a.position, a.userData.color);
+                    addScore(a.userData.isHeavy ? 300 : 100);
+                    scene.remove(a);
+                    asteroids.splice(i, 1);
+                }
+            }
+        }
+    } else {
+        beamMesh.visible = false;
+        beamLight.visible = false;
+    }
+
+    // --- 4. UFO BOSS LOGIC (WITH VARIABLE DELAY) ---
+    if (score >= 5000 && !ufoActive) {
+        const timeSinceLastDefeat = Date.now() - lastUfoDefeatTime;
+
+        // Only start the spawn sequence if we haven't started yet 
+        // AND enough time has passed since the last one died
+        if (!ufoSpawningInitiated && timeSinceLastDefeat > nextUfoDelay) {
+            ufoSpawningInitiated = true;
+            ufoSpawnTimer = 180; // 3-second visual warning countdown
+
+            const multiUI = document.getElementById('multiplier-ui');
+            if (multiUI) {
+                multiUI.innerText = "WARNING: HIGH-ENERGY SIGNATURE DETECTED";
+                multiUI.style.color = "#ff0000";
+            }
+        }
+
+        // While the warning is active, shake the camera and count down
+        if (ufoSpawningInitiated && ufoSpawnTimer > 0) {
+            ufoSpawnTimer--;
+            camera.position.x += (Math.random() - 0.5) * 0.08;
+
+            if (ufoSpawnTimer === 1) {
+                spawnUfo();
             }
         }
     }
-} else {
-    beamMesh.visible = false;
-    beamLight.visible = false;
-}
-
-            // --- 4. UFO BOSS LOGIC (WITH VARIABLE DELAY) ---
-        if (score >= 5000 && !ufoActive) {
-            const timeSinceLastDefeat = Date.now() - lastUfoDefeatTime;
-
-            // Only start the spawn sequence if we haven't started yet 
-            // AND enough time has passed since the last one died
-            if (!ufoSpawningInitiated && timeSinceLastDefeat > nextUfoDelay) {
-                ufoSpawningInitiated = true;
-                ufoSpawnTimer = 180; // 3-second visual warning countdown
-                
-                const multiUI = document.getElementById('multiplier-ui');
-                if (multiUI) {
-                    multiUI.innerText = "WARNING: HIGH-ENERGY SIGNATURE DETECTED";
-                    multiUI.style.color = "#ff0000";
-                }
-            }
-
-            // While the warning is active, shake the camera and count down
-            if (ufoSpawningInitiated && ufoSpawnTimer > 0) {
-                ufoSpawnTimer--;
-                camera.position.x += (Math.random() - 0.5) * 0.08;
-                
-                if (ufoSpawnTimer === 1) {
-                    spawnUfo();
-                }
-            }
-        }
 
     if (ufoActive && ufo) {
         ufo.position.z = THREE.MathUtils.lerp(ufo.position.z, -40, 0.02);
@@ -603,7 +631,7 @@ if (keys['Space'] && beamPowerTime > 0) {
 
         // Beam Hit Detection
         if (beamMesh.visible && Math.abs(ufo.position.x - playerGroup.position.x) < 2.8) {
-            ufoHP -= 0.15; 
+            ufoHP -= 0.15;
             updateBossUI();
             if (ufo.children[0]) ufo.children[0].material.emissive.setHex(0x00ff00);
         }
